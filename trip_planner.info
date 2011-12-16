@@ -1,0 +1,4 @@
+name = Trip Planner
+description = "Creates an itenerary of items for users"
+package = Custom
+core = 6.x

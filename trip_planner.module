@@ -1,0 +1,120 @@
+<?php
+function trip_planner_views_pre_render(&$view) {
+  if ($view->vid == 5 && $view->current_display == 'page_8') {
+    global $user;
+    if ($user->uid) {
+      // Build array of emails from accommodations
+      $emails = array();
+      $nodes = array();
+      $accommodations = 0;
+      foreach ($view->result as $row) {
+        if ($row->node_type == 'accommodations') {
+          array_push($emails, $row->node_data_field_contact_email_field_contact_email_value);
+          array_push($nodes, $row->nid);
+          $accommodations++;
+        }
+      }
+      $hidden['emails'] = implode(',', $emails);
+      $hidden['nodes'] = implode(',', $nodes);
+
+      if ($accommodations) {
+        $view->attachment_before .= '<div class="trip-planner-form">' . t('<p>The Trip Planner lets you keep track of the places you\'re interested in visiting. You can add anything from the directory into your Trip Planner as you browse, remove things you\'re no longer interested in, and even send booking inquiries to hotels and other accommodations.</p>') . drupal_get_form('trip_planner_form', $hidden) . '</div>';
+      }
+    } else {
+      $view->attachment_before .= t('To use the Trip Planner, you need to <a href="/user/register">create an account</a> with Go Thassos. It\'s fast and free!');
+      $view->display['page_8']->handler->options['empty'] = '';
+    }
+  }
+}
+
+function trip_planner_form(&$form_state, $hidden) {
+  $form['trip-planner'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Accommodation Booking Inquiry'),
+    '#tree' => TRUE,
+  );
+
+  $form['trip-planner']['arriving'] = array(
+    '#type' => 'date_popup',
+    '#title' => t('Arriving on'),
+  );
+
+  $form['trip-planner']['departing'] = array(
+    '#type' => 'date_popup',
+    '#title' => t('Departing on'),
+  );
+
+  $form['trip-planner']['adults'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Adults'),
+    '#size' => 1,
+    '#maxlength' => 5,
+  );
+
+  $form['trip-planner']['children'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Children'),
+    '#size' => 1,
+    '#maxlength' => 5,
+  );
+
+  $form['trip-planner']['special-requests'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Special requests or needs'),
+    '#cols' => 60,
+    '#rows' => 5,
+  );
+
+  $form['trip-planner']['hidden'] = array(
+    '#type' => 'value',
+    '#value' => $hidden,
+  );
+
+  $form['trip-planner']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Send Inquiry'),
+  );
+
+  return $form;
+}
+
+function trip_planner_form_submit($form, &$form_state) {
+  global $language;
+  global $user;
+
+  $values = array();
+  foreach($form_state['values']['trip-planner'] as $key => $value) {
+    $values['!' . $key] = $value;
+  }
+
+  $emails = explode(',', $form_state['values']['trip-planner']['hidden']['emails']);
+  $nodes = explode(',', $form_state['values']['trip-planner']['hidden']['nodes']);
+
+  $params['account'] = $user;
+  $params['values'] = $values;
+
+  foreach ($nodes as $node) {
+    flag('flag', 'trip_planner_history', $node, $account = NULL);
+  }
+
+  $emails = array();
+  foreach ($emails as $email) {
+    $mail = drupal_mail('trip_planner', 'itinerary', $email, $language, $params);
+    if ($mail['result']) {
+      drupal_set_message(t('Your booking request has been successfully sent'));
+    }
+  }
+}
+
+function trip_planner_mail($key, &$message, $params) {
+  $language = $message['language'];
+  $variables = user_mail_tokens($params['account'], $language);
+  $variables = array_merge($variables, $params['values']);
+
+  switch($key) {
+    case 'itinerary':
+      $message['subject'] = t('Contact request from !site website', $variables, $language->language);
+      $message['body'][] = t("!username\n\nArriving:\t!arriving\n\nDeparting:\t!departing\n\nNumber of adults:\t!adults\n\nNumber of children:\t!children\n\nSpecial requests:\t!special-requests", $variables, $language->language);
+      break;
+  }
+}
